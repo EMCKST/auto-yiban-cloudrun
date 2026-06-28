@@ -5,6 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>易班自动签到</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,sans-serif;background:#f0f2f5;min-height:100vh;display:flex;align-items:center;justify-content:center}
@@ -70,6 +71,8 @@ input:checked+.toggle-slider:before{transform:translateX(22px)}
 #login-status{padding:10px;border-radius:6px;font-size:14px;display:none;text-align:center;margin-top:12px}
 #login-status.error{display:block;color:#c62828;background:#fdecea}
 #login-status.loading{display:block;color:#1a73e8;background:#e8f4fd}
+.mini-map{width:100%;height:200px;border-radius:12px;overflow:hidden;margin-bottom:16px;border:1px solid #d9d9d9;display:none}
+.mini-map.show{display:block}
 </style>
 </head>
 <body>
@@ -85,7 +88,8 @@ input:checked+.toggle-slider:before{transform:translateX(22px)}
 <div class="card" id="page-checkin">
   <h2>易班晚点签到 <span class="saved-badge" id="saved-badge" style="display:none">已保存</span></h2>
   <p class="subtitle" id="user-info"></p>
-  <div class="form-group"><label>签到校区</label><select id="campus-select"><!--__CAMPUS_OPTIONS__--></select></div>
+  <div class="form-group"><label>签到校区</label><select id="campus-select" onchange="updateMap()"><!--__CAMPUS_OPTIONS__--></select></div>
+  <div id="mini-map" class="mini-map"></div>
   
   <div class="form-group">
     <label class="toggle-label" onclick="toggleAuto()"><span class="toggle-switch"><input type="checkbox" id="auto-toggle" onchange="toggleAuto()"><span class="toggle-slider"></span></span><span>是否需要自动签到</span></label>
@@ -209,6 +213,37 @@ function doLogout(){
   document.getElementById('page-checkin').style.display='none';
   document.getElementById('log-body').classList.remove('show');
 }
+
+// 小地图
+var campusMap = null;
+function initMap() {
+  var sel = document.getElementById('campus-select');
+  var key = sel.value;
+  updateMapPosition(key);
+}
+function updateMap() {
+  var sel = document.getElementById('campus-select');
+  var key = sel.value;
+  updateMapPosition(key);
+}
+function updateMapPosition(key) {
+  var c = CAMPUSES[key];
+  var el = document.getElementById('mini-map');
+  if (!c || c.lat == null || c.lng == null) {
+    el.classList.remove('show');
+    return;
+  }
+  el.classList.add('show');
+  if (!campusMap) {
+    campusMap = L.map('mini-map', { zoomControl: false, attributionControl: false }).setView([c.lat, c.lng], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(campusMap);
+  }
+  campusMap.setView([c.lat, c.lng], 15);
+  if (campusMap._marker) campusMap.removeLayer(campusMap._marker);
+  campusMap._marker = L.marker([c.lat, c.lng]).addTo(campusMap).bindPopup(c.name).openPopup();
+}
 </script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>setTimeout(initMap, 100);</script>
 </body>
 </html>
