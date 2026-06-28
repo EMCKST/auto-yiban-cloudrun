@@ -7,6 +7,36 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const CHROME_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
 const HEADLESS = true;
+
+// WGS-84 → GCJ-02 坐标转换（中国大陆地图应用偏移修正）
+function wgs2gcj(lat, lng) {
+  if (lat == null || lng == null) return { lat: lat, lng: lng };
+  var a = 6378245.0;
+  var ee = 0.00669342162296594323;
+  var dLat = _transformLat(lng - 105.0, lat - 35.0);
+  var dLng = _transformLng(lng - 105.0, lat - 35.0);
+  var radLat = lat / 180.0 * Math.PI;
+  var magic = Math.sin(radLat);
+  magic = 1 - ee * magic * magic;
+  var sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+  dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+  return { lat: lat + dLat, lng: lng + dLng };
+}
+function _transformLat(x, y) {
+  var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+  ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320.0 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+  return ret;
+}
+function _transformLng(x, y) {
+  var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+  ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+  return ret;
+}
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
@@ -87,13 +117,14 @@ async function oauthLogin(phone, password) {
 }
 
 async function doCheckin(phone, password, lat, lng) {
+  var gcj = wgs2gcj(lat, lng);
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: HEADLESS, args: CHROME_ARGS });
   try {
     const ctx = await browser.newContext({
       viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       locale: "zh-CN", userAgent: UA,
-      geolocation: { latitude: lat, longitude: lng }, permissions: ["geolocation"],
+      geolocation: { latitude: gcj.lat, longitude: gcj.lng }, permissions: ["geolocation"],
     });
     const page = await ctx.newPage();
     await page.addInitScript(WECHAT_INIT);
