@@ -126,7 +126,6 @@ async function doCheckin(phone, password, lat, lng) {
       geolocation: { latitude: lat, longitude: lng }, permissions: ["geolocation"],
     });
     const page = await ctx.newPage();
-    await page.addInitScript(wechatInit, { lat: lat, lng: lng });
 
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
