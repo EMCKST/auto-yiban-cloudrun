@@ -85,7 +85,7 @@ input:checked+.toggle-slider:before{transform:translateX(22px)}
 <div class="card" id="page-checkin">
   <h2>易班晚点签到 <span class="saved-badge" id="saved-badge" style="display:none">已保存</span></h2>
   <p class="subtitle" id="user-info"></p>
-  <div class="form-group"><label>签到校区</label><select id="campus-select"><option value="main">三江学院主校区 (31.9590, 118.7435)</option><option value="dongshan">三江学院东山校区 (31.9736, 118.8193)</option><option value="nan">三江学院南校区 (待配置)</option></select></div>
+  <div class="form-group"><label>签到校区</label><select id="campus-select"><!--__CAMPUS_OPTIONS__--></select></div>
   
   <div class="form-group">
     <label class="toggle-label" onclick="toggleAuto()"><span class="toggle-switch"><input type="checkbox" id="auto-toggle" onchange="toggleAuto()"><span class="toggle-slider"></span></span><span>是否需要自动签到</span></label>
@@ -107,7 +107,7 @@ input:checked+.toggle-slider:before{transform:translateX(22px)}
   <div id="status"></div>
 </div>
 <script>
-var CAMPUSES={main:{name:"三江学院主校区",lat:31.9590,lng:118.743518},dongshan:{name:"三江学院东山校区",lat:31.973584656344443,lng:118.81927301373297},nan:{name:"三江学院南校区",lat:null,lng:null}};
+var CAMPUSES=/*__CAMPUS_DATA__*/;
 var currentUser=null;
 
 function getLogClass(it){var m=it.msg||'',s=it.success;if(s&&m.indexOf('未达')<0)return'success';if(m.indexOf('未达')>=0)return'pending';if(!s)return'fail';return'unknown'}

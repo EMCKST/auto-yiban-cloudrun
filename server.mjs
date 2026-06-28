@@ -10,7 +10,18 @@ const HEADLESS = true;
 const DATA_DIR = path.join(__dirname, "data");
 const USERS_FILE = path.join(DATA_DIR, "users.json");
 const LOGS_FILE = path.join(DATA_DIR, "logs.json");
+const CAMPUSES_FILE = path.join(DATA_DIR, "campuses.json");
 try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e) {}
+
+// 启动时加载校区数据（单一数据源）
+const CAMPUSES = readJSON(CAMPUSES_FILE);
+const CAMPUS_KEYS = Object.keys(CAMPUSES);
+const CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
+  var c = CAMPUSES[k];
+  var label = c.lat !== null ? c.name + " (" + c.lat.toFixed(4) + ", " + c.lng.toFixed(4) + ")" : c.name + " (待配置)";
+  return '<option value="' + k + '">' + label + '</option>';
+}).join("");
+const CAMPUS_SCRIPT = '<script>var CAMPUSES=' + JSON.stringify(CAMPUSES) + ';</script>';
 
 function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch(e) { return file === LOGS_FILE ? [] : {}; } }
 function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8"); }
@@ -159,7 +170,16 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { status: "ok", time: new Date().toISOString() });
       return;
     }
-    var fp = req.url === "/" ? "/index.html" : req.url;
+    if (req.url === "/" || req.url === "/index.html") {
+      // 注入校区数据到 HTML
+      var html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
+      html = html.replace("<!--__CAMPUS_OPTIONS__-->", CAMPUS_OPTIONS);
+      html = html.replace("/*__CAMPUS_DATA__*/", JSON.stringify(CAMPUSES));
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
+      return;
+    }
+    var fp = req.url;
     if (fp.indexOf("?") > 0) fp = fp.substring(0, fp.indexOf("?"));
     if (staticFile(res, path.join(__dirname, "public", fp), path.extname(fp))) return;
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("404");
