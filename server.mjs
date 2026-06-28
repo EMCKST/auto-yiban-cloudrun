@@ -103,7 +103,6 @@ async function oauthLogin(phone, password) {
   try {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "zh-CN", userAgent: UA });
     const page = await ctx.newPage();
-    await page.addInitScript(wechatInit, { lat: CAMPUSES.main.lat, lng: CAMPUSES.main.lng });
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 25000 });
     await page.waitForTimeout(3000);
     try { await page.waitForURL("**oauth.yiban.cn**", { timeout: 15000 }); } catch(e) {}
