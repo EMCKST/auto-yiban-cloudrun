@@ -117,14 +117,13 @@ async function oauthLogin(phone, password) {
 }
 
 async function doCheckin(phone, password, lat, lng) {
-  var gcj = wgs2gcj(lat, lng);
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: HEADLESS, args: CHROME_ARGS });
   try {
     const ctx = await browser.newContext({
       viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
       locale: "zh-CN", userAgent: UA,
-      geolocation: { latitude: gcj.lat, longitude: gcj.lng }, permissions: ["geolocation"],
+      geolocation: { latitude: lat, longitude: lng }, permissions: ["geolocation"],
     });
     const page = await ctx.newPage();
     await page.addInitScript(WECHAT_INIT);
