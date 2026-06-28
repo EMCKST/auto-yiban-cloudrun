@@ -72,19 +72,15 @@ function wechatInit(coord) {
   var lat = coord.lat, lng = coord.lng;
   try { Object.defineProperty(navigator, "platform", { get: function() { return "iPhone"; } }); } catch(e) {}
   Object.defineProperty(window, "__wxjs_environment", { value: "develop", writable: true, configurable: true });
-  if (typeof WeixinJSBridge === "undefined") {
-    window.WeixinJSBridge = { invoke: function(a,p,cb) {
-      var r = { err_msg: a + ":ok" };
-      if (a === "getLocation") r = { err_msg: "getLocation:ok", latitude: lat, longitude: lng, speed: 0, accuracy: 65 };
-      if (typeof cb === "function") setTimeout(function() { cb(r); }, 100);
-    }, on: function(e,cb) { if (cb) cb(); } };
-  }
-  if (typeof wx === "undefined") {
-    window.wx = { ready: function(cb) { if (cb) setTimeout(cb, 50); }, config: function(){}, error: function(){},
-      getLocation: function(o) { if (o&&o.success) o.success({ latitude: lat, longitude: lng, speed: 0, accuracy: 65, errMsg: "getLocation:ok" }); },
-      getNetworkType: function(o) { if (o&&o.success) o.success({ networkType: "wifi", errMsg: "getNetworkType:ok" }); }
-    };
-  }
+  window.WeixinJSBridge = { invoke: function(a,p,cb) {
+    var r = { err_msg: a + ":ok" };
+    if (a === "getLocation") r = { err_msg: "getLocation:ok", latitude: lat, longitude: lng, speed: 0, accuracy: 65 };
+    if (typeof cb === "function") setTimeout(function() { cb(r); }, 100);
+  }, on: function(e,cb) { if (cb) cb(); } };
+  window.wx = { ready: function(cb) { if (cb) setTimeout(cb, 50); }, config: function(){}, error: function(){},
+    getLocation: function(o) { if (o&&o.success) o.success({ latitude: lat, longitude: lng, speed: 0, accuracy: 65, errMsg: "getLocation:ok" }); },
+    getNetworkType: function(o) { if (o&&o.success) o.success({ networkType: "wifi", errMsg: "getNetworkType:ok" }); }
+  };
 }
 
 function addLog(phone, type, success, msg) {
@@ -126,6 +122,7 @@ async function doCheckin(phone, password, lat, lng) {
       geolocation: { latitude: lat, longitude: lng }, permissions: ["geolocation"],
     });
     const page = await ctx.newPage();
+    await page.addInitScript(wechatInit, { lat: lat, lng: lng });
 
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
