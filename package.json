@@ -1,0 +1,12 @@
+{
+  "name": "auto-yiban-cloudrun",
+  "version": "1.0.0",
+  "description": "易班自动签到 - 微信云托管版",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}
