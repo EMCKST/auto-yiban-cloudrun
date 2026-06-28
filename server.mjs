@@ -68,23 +68,24 @@ function staticFile(res, full, ext) {
 
 const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.75(0x18004b2b) NetType/4G Language/zh_CN";
 
-const WECHAT_INIT = function() {
+function wechatInit(coord) {
+  var lat = coord.lat, lng = coord.lng;
   try { Object.defineProperty(navigator, "platform", { get: function() { return "iPhone"; } }); } catch(e) {}
   Object.defineProperty(window, "__wxjs_environment", { value: "develop", writable: true, configurable: true });
   if (typeof WeixinJSBridge === "undefined") {
     window.WeixinJSBridge = { invoke: function(a,p,cb) {
       var r = { err_msg: a + ":ok" };
-      if (a === "getLocation") r = { err_msg: "getLocation:ok", latitude: 31.9590, longitude: 118.743518, speed: 0, accuracy: 65 };
+      if (a === "getLocation") r = { err_msg: "getLocation:ok", latitude: lat, longitude: lng, speed: 0, accuracy: 65 };
       if (typeof cb === "function") setTimeout(function() { cb(r); }, 100);
     }, on: function(e,cb) { if (cb) cb(); } };
   }
   if (typeof wx === "undefined") {
     window.wx = { ready: function(cb) { if (cb) setTimeout(cb, 50); }, config: function(){}, error: function(){},
-      getLocation: function(o) { if (o&&o.success) o.success({ latitude: 31.9590, longitude: 118.743518, speed: 0, accuracy: 65, errMsg: "getLocation:ok" }); },
+      getLocation: function(o) { if (o&&o.success) o.success({ latitude: lat, longitude: lng, speed: 0, accuracy: 65, errMsg: "getLocation:ok" }); },
       getNetworkType: function(o) { if (o&&o.success) o.success({ networkType: "wifi", errMsg: "getNetworkType:ok" }); }
     };
   }
-};
+}
 
 function addLog(phone, type, success, msg) {
   var now = new Date();
@@ -102,7 +103,7 @@ async function oauthLogin(phone, password) {
   try {
     const ctx = await browser.newContext({ viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "zh-CN", userAgent: UA });
     const page = await ctx.newPage();
-    await page.addInitScript(WECHAT_INIT);
+    await page.addInitScript(wechatInit, { lat: lat, lng: lng });
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 25000 });
     await page.waitForTimeout(3000);
     try { await page.waitForURL("**oauth.yiban.cn**", { timeout: 15000 }); } catch(e) {}
@@ -126,7 +127,7 @@ async function doCheckin(phone, password, lat, lng) {
       geolocation: { latitude: lat, longitude: lng }, permissions: ["geolocation"],
     });
     const page = await ctx.newPage();
-    await page.addInitScript(WECHAT_INIT);
+    await page.addInitScript(wechatInit, { lat: lat, lng: lng });
 
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
