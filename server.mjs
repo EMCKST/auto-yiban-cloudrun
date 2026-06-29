@@ -62,7 +62,7 @@ function updateCampusOptions() {
   }).join("");
 }
 
-// 匹配 polygonCenter 到最近校区
+// 匹配 polygonCenter 到最近校区（超过 2km 视为新校区）
 function matchCampus(center) {
   var best = null, bestDist = Infinity;
   for (var i = 0; i < CAMPUS_KEYS.length; i++) {
@@ -71,7 +71,11 @@ function matchCampus(center) {
     var d = Math.pow(c.lat - center.lat, 2) + Math.pow(c.lng - center.lng, 2);
     if (d < bestDist) { bestDist = d; best = { key: CAMPUS_KEYS[i], name: c.name }; }
   }
-  return best;
+  // 距离阈值：约 0.0003 度² ≈ 2km。超过则识别为新校区
+  if (bestDist > 0.0003) {
+    return { key: null, name: null, isNew: true, distance: Math.sqrt(bestDist) * 111000 };
+  }
+  return { key: best.key, name: best.name, isNew: false };
 }
 
 function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch(e) { return file === LOGS_FILE ? [] : {}; } }
@@ -146,6 +150,17 @@ async function extractPolygonCenter(page) {
       return await r.json();
     }, csrf);
     if (!sp || sp.code !== 0 || !sp.data || !sp.data.Position || !sp.data.Position.length) return null;
+
+    // 尝试提取学校/区域名称
+    var areaName = null;
+    try { areaName = sp.data.Position[0].AreaName || sp.data.Position[0].Name || sp.data.SchoolName || null; } catch(e) {}
+    if (!areaName) {
+      var pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; }).catch(function(){ return ""; });
+      var match = pageText.match(/(.{2,10})(?:晚点|签到|考勤)/);
+      if (match) areaName = match[1];
+      if (!areaName) areaName = await page.title().catch(function(){ return "未知校区"; });
+    }
+
     var points = sp.data.Position[0].Points || [];
     if (!points.length) return null;
     // points ??: ["lng,lat", "lng,lat", ...]
@@ -158,6 +173,7 @@ async function extractPolygonCenter(page) {
     return {
       center: { lat: sumLat / n, lng: sumLng / n },
       polygon: points,
+      areaName: areaName,
       state: sp.data.State,
       deviceState: sp.data.DeviceState
     };
@@ -333,15 +349,25 @@ const server = http.createServer(async (req, res) => {
           // 自动匹配校区并保存校准坐标
           if (result.polygonCenter) {
             var matched = matchCampus(result.polygonCenter);
-            console.log("CAMPUS match:", JSON.stringify({ matched: matched?.key, center: result.polygonCenter }));
-            if (matched) {
+            console.log("CAMPUS match:", JSON.stringify({ matched: matched, center: result.polygonCenter }));
+            if (matched.isNew) {
+              // 新校区：自动创建
+              var newKey = "campus_" + Date.now();
+              var newName = result.areaName || result.polygonCenter.areaName || ("校区" + (CAMPUS_KEYS.length + 1));
+              CAMPUSES[newKey] = { name: newName, lat: result.polygonCenter.lat, lng: result.polygonCenter.lng, calibrated: true };
+              CAMPUS_KEYS.push(newKey);
+              resp.campus = newKey;
+              resp.campusName = newName + "(新识别)";
+              console.log("NEW campus created:", newKey, newName);
+            } else if (matched.key) {
               resp.campus = matched.key;
               resp.campusName = matched.name;
               CAMPUSES[matched.key].lat = result.polygonCenter.lat;
               CAMPUSES[matched.key].lng = result.polygonCenter.lng;
               CAMPUSES[matched.key].calibrated = true;
+            }
+            if (matched.key || matched.isNew) {
               writeJSON(CAMPUSES_FILE, CAMPUSES);
-              console.log("Saved campus:", matched.key, "→", result.polygonCenter.lat, result.polygonCenter.lng);
               updateCampusOptions();
             }
           }
