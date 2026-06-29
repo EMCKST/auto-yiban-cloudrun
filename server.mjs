@@ -333,6 +333,7 @@ const server = http.createServer(async (req, res) => {
           // 自动匹配校区并保存校准坐标
           if (result.polygonCenter) {
             var matched = matchCampus(result.polygonCenter);
+            console.log("CAMPUS match:", JSON.stringify({ matched: matched?.key, center: result.polygonCenter }));
             if (matched) {
               resp.campus = matched.key;
               resp.campusName = matched.name;
@@ -340,6 +341,7 @@ const server = http.createServer(async (req, res) => {
               CAMPUSES[matched.key].lng = result.polygonCenter.lng;
               CAMPUSES[matched.key].calibrated = true;
               writeJSON(CAMPUSES_FILE, CAMPUSES);
+              console.log("Saved campus:", matched.key, "→", result.polygonCenter.lat, result.polygonCenter.lng);
               updateCampusOptions();
             }
           }
