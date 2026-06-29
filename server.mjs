@@ -426,7 +426,7 @@ const server = http.createServer(async (req, res) => {
         var users = readJSON(USERS_FILE);
         if (!users[params.phone]) { users[params.phone] = {}; }
         users[params.phone].password = params.password || "";
-        users[params.phone].settings = { campus: params.campus || "main", days: params.days || [], autoEnabled: params.autoEnabled || false };
+        users[params.phone].settings = { campus: params.campus || "main", days: params.days || [], autoEnabled: params.autoEnabled || false, autoTime: params.autoTime || "21:00" };
         writeJSON(USERS_FILE, users);
         json(res, 200, { success: true, msg: "设置已保存" });
       } catch(e) { json(res, 500, { success: false, msg: e.message }); }
@@ -482,18 +482,24 @@ server.listen(PORT, function() { console.log("Server ready: http://0.0.0.0:" + P
 var lastAutoCheck = {};
 setInterval(function() {
   var now = new Date();
-  if (now.getHours() !== 21) return;
   var dateKey = now.toISOString().substring(0, 10);
-  if (lastAutoCheck[dateKey]) return;  // 今天已执行过
-  lastAutoCheck[dateKey] = true;
-
+  var curHour = now.getHours(), curMin = now.getMinutes();
   var users = readJSON(USERS_FILE);
-  var weekday = now.getDay();  // 0=日, 1=一, ...
+  var weekday = now.getDay();
+
   Object.keys(users).forEach(async function(phone) {
     var u = users[phone];
     if (!u || !u.settings || !u.settings.autoEnabled) return;
     if (!u.settings.days || u.settings.days.indexOf(weekday) < 0) return;
     if (!u.password) return;
+
+    // 匹配用户设定的签到时间
+    var at = (u.settings.autoTime || "21:00").split(":");
+    var atH = parseInt(at[0]), atM = parseInt(at[1]);
+    if (curHour !== atH || curMin !== atM) return;
+    var timeKey = phone + "_" + dateKey + "_" + u.settings.autoTime;
+    if (lastAutoCheck[timeKey]) return;
+    lastAutoCheck[timeKey] = true;
 
     var campus = (u.settings.campus && CAMPUSES[u.settings.campus]) || CAMPUSES.main;
     if (!campus || campus.lat == null || campus.lng == null) return;
@@ -503,11 +509,10 @@ setInterval(function() {
       var result = await doCheckin(phone, u.password, campus.lat, campus.lng);
       addLog(phone, "auto", result.msg.indexOf("成功") >= 0 || result.msg.indexOf("已") >= 0, result.msg);
       releaseLock();
-      console.log("Auto checkin:", phone, result.msg);
+      console.log("Auto checkin:", phone, u.settings.autoTime, result.msg);
     } catch(e) {
       try { releaseLock(); } catch(e2) {}
       addLog(phone, "auto", false, e.message);
-      console.log("Auto checkin error:", phone, e.message);
     }
   });
 }, 60000);
