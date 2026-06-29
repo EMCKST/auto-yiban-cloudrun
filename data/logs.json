@@ -46,5 +46,37 @@
     "time": "22:02:28",
     "success": true,
     "msg": "签到成功"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-30",
+    "time": "00:59:09",
+    "success": false,
+    "msg": "签失败"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-30",
+    "time": "00:59:59",
+    "success": false,
+    "msg": "签失败"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-30",
+    "time": "01:01:25",
+    "success": false,
+    "msg": "签失败"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-30",
+    "time": "01:01:54",
+    "success": false,
+    "msg": "签失败"
   }
 ]

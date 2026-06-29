@@ -268,7 +268,9 @@ async function doCheckin(phone, password, lat, lng) {
     var finalMsg = alreadyDone ? "今日已签到"
       : pageText.indexOf("签到成功") >= 0 ? "签到成功"
       : pageText.indexOf("非法") >= 0 ? "今日已签到"
-      : "签失败";
+      : pageText.indexOf("未开始") >= 0 || pageText.indexOf("不在") >= 0 || pageText.indexOf("时间") >= 0
+        ? pageText.substring(0, 50).replace(/\n/g, " ").trim()
+      : "签失败: " + (pageText.substring(0, 30).replace(/\n/g, " ").trim() || "未知原因");
 
     // 提取易班签到多边形中心点（校准用）
     var polyInfo = await extractPolygonCenter(page);
@@ -475,3 +477,37 @@ if (req.url === "/api/checkin") {
 });
 
 server.listen(PORT, function() { console.log("Server ready: http://0.0.0.0:" + PORT); });
+
+// 自动签到调度器：每 60 秒检查一次
+var lastAutoCheck = {};
+setInterval(function() {
+  var now = new Date();
+  if (now.getHours() !== 21) return;
+  var dateKey = now.toISOString().substring(0, 10);
+  if (lastAutoCheck[dateKey]) return;  // 今天已执行过
+  lastAutoCheck[dateKey] = true;
+
+  var users = readJSON(USERS_FILE);
+  var weekday = now.getDay();  // 0=日, 1=一, ...
+  Object.keys(users).forEach(async function(phone) {
+    var u = users[phone];
+    if (!u || !u.settings || !u.settings.autoEnabled) return;
+    if (!u.settings.days || u.settings.days.indexOf(weekday) < 0) return;
+    if (!u.password) return;
+
+    var campus = (u.settings.campus && CAMPUSES[u.settings.campus]) || CAMPUSES.main;
+    if (!campus || campus.lat == null || campus.lng == null) return;
+
+    try {
+      await acquireLock();
+      var result = await doCheckin(phone, u.password, campus.lat, campus.lng);
+      addLog(phone, "auto", result.msg.indexOf("成功") >= 0 || result.msg.indexOf("已") >= 0, result.msg);
+      releaseLock();
+      console.log("Auto checkin:", phone, result.msg);
+    } catch(e) {
+      try { releaseLock(); } catch(e2) {}
+      addLog(phone, "auto", false, e.message);
+      console.log("Auto checkin error:", phone, e.message);
+    }
+  });
+}, 60000);
