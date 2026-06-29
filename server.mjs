@@ -46,12 +46,21 @@ try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch(e) {}
 // 启动时加载校区数据（单一数据源）
 const CAMPUSES = readJSON(CAMPUSES_FILE);
 const CAMPUS_KEYS = Object.keys(CAMPUSES);
-const CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
+var CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
   var c = CAMPUSES[k];
   var label = c.lat !== null ? c.name + " (" + c.lat.toFixed(4) + ", " + c.lng.toFixed(4) + ")" : c.name + " (待配置)";
   return '<option value="' + k + '">' + label + '</option>';
 }).join("");
 const CAMPUS_SCRIPT = '<script>var CAMPUSES=' + JSON.stringify(CAMPUSES) + ';</script>';
+
+// 校准后重新生成选项列表
+function updateCampusOptions() {
+  CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
+    var c = CAMPUSES[k];
+    var label = c.lat !== null ? c.name + " (" + c.lat.toFixed(4) + ", " + c.lng.toFixed(4) + ")" : c.name + " (待配置)";
+    return '<option value="' + k + '">' + label + '</option>';
+  }).join("");
+}
 
 function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch(e) { return file === LOGS_FILE ? [] : {}; } }
 function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8"); }
@@ -110,6 +119,37 @@ async function oauthLogin(phone, password) {
     await browser.close();
     return { ok: loginOk };
   } catch(e) { await browser.close().catch(function(){}); throw e; }
+}
+
+
+// ??? signPosition API ???????????YiBan ?????
+async function extractPolygonCenter(page) {
+  try {
+    var cookies = await page.context().cookies();
+    var csrfCookie = cookies.find(function(c) { return c.name === "csrf_token"; });
+    if (!csrfCookie) return null;
+    var csrf = csrfCookie.value;
+    var sp = await page.evaluate(async function(token) {
+      var r = await fetch("https://api.uyiban.com/nightAttendance/student/index/signPosition?CSRF=" + token, { credentials: "include" });
+      return await r.json();
+    }, csrf);
+    if (!sp || sp.code !== 0 || !sp.data || !sp.data.Position || !sp.data.Position.length) return null;
+    var points = sp.data.Position[0].Points || [];
+    if (!points.length) return null;
+    // points ??: ["lng,lat", "lng,lat", ...]
+    var sumLat = 0, sumLng = 0, n = points.length;
+    for (var i = 0; i < n; i++) {
+      var parts = points[i].split(",");
+      sumLng += parseFloat(parts[0]);
+      sumLat += parseFloat(parts[1]);
+    }
+    return {
+      center: { lat: sumLat / n, lng: sumLng / n },
+      polygon: points,
+      state: sp.data.State,
+      deviceState: sp.data.DeviceState
+    };
+  } catch(e) { return null; }
 }
 
 async function doCheckin(phone, password, lat, lng) {
@@ -174,14 +214,56 @@ async function doCheckin(phone, password, lat, lng) {
       : pageText.indexOf("非法") >= 0 ? "今日已签到"
       : "签失败";
 
+    // 提取易班签到多边形中心点（校准用）
+    var polyInfo = await extractPolygonCenter(page);
+
     await browser.close();
-    return { success: true, msg: finalMsg };
+    var isSuccess = finalMsg.indexOf("成功") >= 0 || finalMsg.indexOf("已签到") >= 0;
+
+    await browser.close();
+    return { success: isSuccess, msg: finalMsg, polygonCenter: polyInfo ? polyInfo.center : null, polygon: polyInfo ? polyInfo.polygon : null };
   } catch(e) { await browser.close().catch(function(){}); throw e; }
 }
 
 var browserLock = false;
 function acquireLock() { return new Promise(function(resolve) { var check = function() { if (!browserLock) { browserLock = true; resolve(); } else { setTimeout(check, 500); } }; check(); }); }
 function releaseLock() { browserLock = false; }
+
+// 校准端点：只登录 + 拉取签到多边形中心点，不执行实际签到
+async function doCalibrate(phone, password) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: HEADLESS, args: CHROME_ARGS });
+  try {
+    const ctx = await browser.newContext({
+      viewport: { width: 375, height: 812 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+      locale: "zh-CN", userAgent: UA,
+      geolocation: { latitude: 31.9590, longitude: 118.743518 }, permissions: ["geolocation"],
+    });
+    const page = await ctx.newPage();
+    await page.addInitScript(wechatInit, { lat: 31.9590, lng: 118.743518 });
+    await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(3000);
+    try { await page.waitForURL("**oauth.yiban.cn**", { timeout: 15000 }); } catch(e) {}
+    if ((await page.url()).includes("oauth.yiban.cn")) {
+      await page.evaluate(function(args) {
+        var u=document.getElementById("check_u"),p=document.getElementById("check_p");
+        if(u)u.value=args[0];if(p)p.value=args[1];
+        var cb=document.getElementById("checkbox_100");if(cb&&!cb.checked)cb.checked=true;
+      }, [phone, password]);
+      await page.evaluate(function() { var btn=document.querySelector(".bottom_box.oauth_sure"); if(btn)btn.click(); });
+      try { await page.waitForURL(function(u) { return !u.toString().includes("oauth.yiban.cn"); }, { timeout: 15000 }); } catch(e) {}
+      if ((await page.url()).includes("oauth.yiban.cn")) { await browser.close(); return { ok: false, msg: "u767bu5f55u5931u8d25" }; }
+    }
+    await page.goto("https://app.uyiban.com/nightattendance/student/", { waitUntil: "domcontentloaded", timeout: 30000 });
+    try { await page.waitForLoadState("networkidle", { timeout: 8000 }); } catch(e) { await page.waitForTimeout(3000); }
+    var polyInfo = await extractPolygonCenter(page);
+    await browser.close();
+    if (polyInfo) {
+      return { ok: true, polygonCenter: polyInfo.center, polygon: polyInfo.polygon, state: polyInfo.state, deviceState: polyInfo.deviceState };
+    }
+    return { ok: false, msg: "u65e0u6cd5u83b7u53d6u7b7eu5230u591au8fb9u5f62" };
+  } catch(e) { await browser.close().catch(function(){}); throw e; }
+}
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "GET") {
@@ -236,6 +318,15 @@ const server = http.createServer(async (req, res) => {
           var resp = { success: true, msg: "登录成功" };
           var users = readJSON(USERS_FILE);
           if (users[params.phone]) { resp.settings = users[params.phone].settings; }
+          // 新用户：自动校准一次获取校区位置
+          if (!resp.settings) {
+            try {
+              var calResult = await doCalibrate(params.phone, params.password);
+              if (calResult.ok && calResult.polygonCenter) {
+                resp.polygonCenter = calResult.polygonCenter;
+              }
+            } catch(e) {}
+          }
           json(res, 200, resp);
         } else { json(res, 401, { success: false, msg: result.reason }); }
       } catch(e) { json(res, 500, { success: false, msg: e.message }); }
@@ -254,11 +345,35 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.url === "/api/checkin") {
+        if (req.url === "/api/calibrate") {
+          try {
+            var calResult = await doCalibrate(params.phone, params.password);
+            if (calResult.ok) {
+              // 如果是针对特定校区的校准，保存到 campuses.json
+              if (params.campus && calResult.polygonCenter) {
+                var campusKey = params.campus;
+                if (CAMPUSES[campusKey]) {
+                  CAMPUSES[campusKey].lat = calResult.polygonCenter.lat;
+                  CAMPUSES[campusKey].lng = calResult.polygonCenter.lng;
+                  CAMPUSES[campusKey].calibrated = true;
+                  writeJSON(CAMPUSES_FILE, CAMPUSES);
+                  // 更新 HTML 注入用的选项列表
+                  updateCampusOptions();
+                }
+              }
+              json(res, 200, { success: true, polygonCenter: calResult.polygonCenter, polygon: calResult.polygon, state: calResult.state, deviceState: calResult.deviceState });
+            } else {
+              json(res, 400, { success: false, msg: calResult.msg });
+            }
+          } catch(e) { json(res, 500, { success: false, msg: e.message }); }
+          return;
+        }
+
+if (req.url === "/api/checkin") {
       try {
         await acquireLock();
         var result = await doCheckin(params.phone, params.password, Number(params.lat), Number(params.lng));
-        addLog(params.phone, "manual", result.msg.indexOf("成功") >= 0 || result.msg.indexOf("已") >= 0, result.msg);
+        addLog(params.phone, "manual", result.success, result.msg);
         releaseLock();
         json(res, 200, result);
       } catch(e) {

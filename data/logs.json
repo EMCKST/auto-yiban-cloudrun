@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "phone": "18687200271",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "21:09:46",
+    "success": false,
+    "msg": "签失败"
+  },
+  {
+    "phone": "18687200271",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "21:11:24",
+    "success": true,
+    "msg": "今日已签到"
+  },
+  {
+    "phone": "18687200271",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "21:12:16",
+    "success": true,
+    "msg": "今日已签到"
+  },
+  {
+    "phone": "18687200271",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "21:56:23",
+    "success": true,
+    "msg": "今日已签到"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "22:02:08",
+    "success": false,
+    "msg": "签失败"
+  },
+  {
+    "phone": "15949132489",
+    "type": "manual",
+    "date": "2026-06-29",
+    "time": "22:02:28",
+    "success": true,
+    "msg": "签到成功"
+  }
+]
