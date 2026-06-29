@@ -153,12 +153,18 @@ async function extractPolygonCenter(page) {
 
     // 尝试提取学校/区域名称
     var areaName = null;
-    // 1. API 返回值
-    try { areaName = sp.data.Position[0].AreaName || sp.data.Position[0].Name || sp.data.SchoolName || sp.data.school || sp.data.School || null; } catch(e) {}
-    // 2. 页面可见文本中匹配"XX晚点签到"等模式
+    // 1. API 返回值（调试：打印原始数据）
+    try {
+      console.log("signPosition raw keys:", JSON.stringify(Object.keys(sp.data)));
+      console.log("Position[0] keys:", JSON.stringify(Object.keys(sp.data.Position[0])));
+      areaName = sp.data.Position[0].AreaName || sp.data.Position[0].Name || sp.data.SchoolName
+        || sp.data.school || sp.data.School || sp.data.Area || sp.data.area || null;
+    } catch(e) {}
+    // 2. 页面可见文本中匹配
     if (!areaName) {
       var pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; }).catch(function(){ return ""; });
-      var match = pageText.match(/(.{2,15})(?:晚点|签到|考勤|查寝)/);
+      console.log("Page text (first 200):", pageText.substring(0, 200));
+      var match = pageText.match(/(.{2,15})(?:晚点|签到|考勤|查寝|学校|学院|大学)/);
       if (match) areaName = match[1].replace(/[\s\d]+/g, "").trim();
       // 3. 尝试从页面标题提取
       if (!areaName) {
@@ -375,7 +381,7 @@ const server = http.createServer(async (req, res) => {
             if (matched.isNew) {
               // 新校区：自动创建
               var newKey = "campus_" + Date.now();
-              var newName = result.areaName || result.polygonCenter.areaName || ("校区" + (CAMPUS_KEYS.length + 1));
+              var newName = result.areaName || ("位置 " + result.polygonCenter.lat.toFixed(4) + "," + result.polygonCenter.lng.toFixed(4));
               CAMPUSES[newKey] = { name: newName, lat: result.polygonCenter.lat, lng: result.polygonCenter.lng, calibrated: true };
               CAMPUS_KEYS.push(newKey);
               resp.campus = newKey;
