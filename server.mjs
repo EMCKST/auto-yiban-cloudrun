@@ -334,6 +334,10 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { status: "ok", time: new Date().toISOString() });
       return;
     }
+    if (req.url === "/api/campuses") {
+      json(res, 200, CAMPUSES);
+      return;
+    }
     if (req.url === "/" || req.url === "/index.html") {
       // 注入校区数据到 HTML
       var html = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
