@@ -381,7 +381,7 @@ const server = http.createServer(async (req, res) => {
             if (matched.isNew) {
               // 新校区：自动创建
               var newKey = "campus_" + Date.now();
-              var newName = result.areaName || ("位置 " + result.polygonCenter.lat.toFixed(4) + "," + result.polygonCenter.lng.toFixed(4));
+              var newName = "[暂未收录此学校，但你依然可以正常签到] (" + result.polygonCenter.lat.toFixed(4) + "," + result.polygonCenter.lng.toFixed(4) + ")";
               CAMPUSES[newKey] = { name: newName, lat: result.polygonCenter.lat, lng: result.polygonCenter.lng, calibrated: true };
               CAMPUS_KEYS.push(newKey);
               resp.campus = newKey;
