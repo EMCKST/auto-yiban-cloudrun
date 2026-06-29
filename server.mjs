@@ -153,13 +153,35 @@ async function extractPolygonCenter(page) {
 
     // 尝试提取学校/区域名称
     var areaName = null;
-    try { areaName = sp.data.Position[0].AreaName || sp.data.Position[0].Name || sp.data.SchoolName || null; } catch(e) {}
+    // 1. API 返回值
+    try { areaName = sp.data.Position[0].AreaName || sp.data.Position[0].Name || sp.data.SchoolName || sp.data.school || sp.data.School || null; } catch(e) {}
+    // 2. 页面可见文本中匹配"XX晚点签到"等模式
     if (!areaName) {
       var pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; }).catch(function(){ return ""; });
-      var match = pageText.match(/(.{2,10})(?:晚点|签到|考勤)/);
-      if (match) areaName = match[1];
-      if (!areaName) areaName = await page.title().catch(function(){ return "未知校区"; });
+      var match = pageText.match(/(.{2,15})(?:晚点|签到|考勤|查寝)/);
+      if (match) areaName = match[1].replace(/[\s\d]+/g, "").trim();
+      // 3. 尝试从页面标题提取
+      if (!areaName) {
+        var title = await page.title().catch(function(){ return ""; });
+        match = title.match(/(.{2,15})(?:-|—|·|\s|$)/);
+        if (match) areaName = match[1].trim();
+      }
     }
+    // 4. 尝试从 URL 参数或其他 API 获取
+    if (!areaName) {
+      try {
+        var info = await page.evaluate(async function() {
+          try {
+            var r = await fetch("https://api.uyiban.com/base/campus/myCampus?CSRF=" + (document.cookie.match(/csrf_token=([^;]+)/)||["",""])[1]);
+            var d = await r.json();
+            if (d.code === 0 && d.data && d.data.name) return d.data.name;
+          } catch(e) {}
+          return "";
+        });
+        if (info) areaName = info;
+      } catch(e) {}
+    }
+    if (!areaName) areaName = "未命名校区";
 
     var points = sp.data.Position[0].Points || [];
     if (!points.length) return null;
