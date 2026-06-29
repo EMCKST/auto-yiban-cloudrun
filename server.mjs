@@ -62,6 +62,18 @@ function updateCampusOptions() {
   }).join("");
 }
 
+// 匹配 polygonCenter 到最近校区
+function matchCampus(center) {
+  var best = null, bestDist = Infinity;
+  for (var i = 0; i < CAMPUS_KEYS.length; i++) {
+    var c = CAMPUSES[CAMPUS_KEYS[i]];
+    if (c.lat == null || c.lng == null) continue;
+    var d = Math.pow(c.lat - center.lat, 2) + Math.pow(c.lng - center.lng, 2);
+    if (d < bestDist) { bestDist = d; best = { key: CAMPUS_KEYS[i], name: c.name }; }
+  }
+  return best;
+}
+
 function readJSON(file) { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch(e) { return file === LOGS_FILE ? [] : {}; } }
 function writeJSON(file, data) { fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8"); }
 
@@ -313,22 +325,36 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === "/api/login") {
       try {
-        var result = await oauthLogin(params.phone, params.password);
+        // 一次搞定：登录验证 + 获取签到多边形中心
+        var result = await doCalibrate(params.phone, params.password);
+        console.log("LOGIN doCalibrate:", JSON.stringify({ ok: result.ok, hasCenter: !!result.polygonCenter, msg: result.msg }));
         if (result.ok) {
-          var resp = { success: true, msg: "登录成功" };
+          var resp = { success: true, msg: "登录成功", polygonCenter: result.polygonCenter, polygon: result.polygon };
+          // 自动匹配校区并保存校准坐标
+          if (result.polygonCenter) {
+            var matched = matchCampus(result.polygonCenter);
+            if (matched) {
+              resp.campus = matched.key;
+              resp.campusName = matched.name;
+              CAMPUSES[matched.key].lat = result.polygonCenter.lat;
+              CAMPUSES[matched.key].lng = result.polygonCenter.lng;
+              CAMPUSES[matched.key].calibrated = true;
+              writeJSON(CAMPUSES_FILE, CAMPUSES);
+              updateCampusOptions();
+            }
+          }
           var users = readJSON(USERS_FILE);
           if (users[params.phone]) { resp.settings = users[params.phone].settings; }
-          // 新用户：自动校准一次获取校区位置
-          if (!resp.settings) {
-            try {
-              var calResult = await doCalibrate(params.phone, params.password);
-              if (calResult.ok && calResult.polygonCenter) {
-                resp.polygonCenter = calResult.polygonCenter;
-              }
-            } catch(e) {}
-          }
           json(res, 200, resp);
-        } else { json(res, 401, { success: false, msg: result.reason }); }
+        } else {
+          // doCalibrate 失败，退回纯登录验证
+          var loginResult = await oauthLogin(params.phone, params.password);
+          if (loginResult.ok) {
+            json(res, 200, { success: true, msg: "登录成功" });
+          } else {
+            json(res, 401, { success: false, msg: loginResult.reason || "登录失败" });
+          }
+        }
       } catch(e) { json(res, 500, { success: false, msg: e.message }); }
       return;
     }
