@@ -249,9 +249,28 @@ async function doCheckin(phone, password, lat, lng) {
     var alreadyDone = pageText.indexOf("已签到") >= 0;
 
     if (!alreadyDone) {
+      // 多种方式查找签到按钮（易班可能更新前端）
       await page.evaluate(function() {
-        var all = document.querySelectorAll("[class*=btn___1FJPN]");
-        for (var i = 0; i < all.length; i++) { all[i].click(); return; }
+        // 方式1：按类名模糊匹配
+        var btns = document.querySelectorAll("[class*=btn]");
+        for (var i = 0; i < btns.length; i++) {
+          var t = (btns[i].textContent || "").trim();
+          if (t === "签到" || t === "我要签到" || t.indexOf("签到") >= 0 && t.length <= 6) {
+            btns[i].click(); return;
+          }
+        }
+        // 方式2：点击页面中可见的大按钮
+        var all = document.querySelectorAll("button, [role=button], .van-button, .weui-btn");
+        for (var i = 0; i < all.length; i++) {
+          var text = (all[i].textContent || "").trim();
+          var rect = all[i].getBoundingClientRect();
+          if (rect.width > 50 && rect.height > 30 && (text.indexOf("签到") >= 0 || text === "确定" || text === "提交")) {
+            all[i].click(); return;
+          }
+        }
+        // 方式3：原来的选择器兜底
+        var old = document.querySelectorAll("[class*=btn___1FJPN]");
+        if (old.length) old[0].click();
       });
       await page.waitForTimeout(4000);
       pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; });
