@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const CHROME_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
-const HEADLESS = true;
+const HEADLESS = false;
 
 // WGS-84 → GCJ-02 坐标转换（中国大陆地图应用偏移修正）
 function wgs2gcj(lat, lng) {
@@ -274,6 +274,26 @@ async function doCheckin(phone, password, lat, lng) {
       });
       await page.waitForTimeout(4000);
       pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; });
+      // 处理易班中间确认步骤（"若出现定位不准确，请点击此处重新定位"）
+      if (pageText.indexOf("重新定位") >= 0 || pageText.indexOf("定位不准确") >= 0) {
+        await page.evaluate(function() {
+          var all = document.querySelectorAll("*");
+          for (var i = 0; i < all.length; i++) {
+            var t = (all[i].textContent || "").trim();
+            if (t === "确定" || t === "提交" || t === "保存" || t.indexOf("重新定位") >= 0) {
+              all[i].click(); return;
+            }
+          }
+          // 兜底：点第一个可见按钮
+          var btns = document.querySelectorAll("button, [role=button]");
+          for (var i = 0; i < btns.length; i++) {
+            var r = btns[i].getBoundingClientRect();
+            if (r.width > 40 && r.height > 20) { btns[i].click(); return; }
+          }
+        });
+        await page.waitForTimeout(3000);
+        pageText = await page.evaluate(function() { return (document.body || {}).innerText || ""; });
+      }
       if (pageText.indexOf("签到成功") >= 0) {
         await page.evaluate(function() {
           var all = document.querySelectorAll("*");
