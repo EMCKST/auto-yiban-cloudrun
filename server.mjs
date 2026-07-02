@@ -2,9 +2,13 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import httpProxy from "http-proxy";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
+
+// ttyd 代理（终端服务，内部端口 7681）
+const ttydProxy = httpProxy.createProxyServer({ target: "http://127.0.0.1:7681", ws: true });
 const CHROME_ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
 const HEADLESS = false;
 
@@ -48,7 +52,8 @@ const CAMPUSES = readJSON(CAMPUSES_FILE);
 const CAMPUS_KEYS = Object.keys(CAMPUSES);
 var CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
   var c = CAMPUSES[k];
-  var label = c.lat !== null ? c.name + " (" + c.lat.toFixed(4) + ", " + c.lng.toFixed(4) + ")" : c.name + " (待配置)";
+  var w = c.wgs || c;
+  var label = w.lat != null ? c.name + " (" + w.lat.toFixed(4) + ", " + w.lng.toFixed(4) + ")" : c.name + " (待配置)";
   return '<option value="' + k + '">' + label + '</option>';
 }).join("");
 const CAMPUS_SCRIPT = '<script>var CAMPUSES=' + JSON.stringify(CAMPUSES) + ';</script>';
@@ -57,7 +62,8 @@ const CAMPUS_SCRIPT = '<script>var CAMPUSES=' + JSON.stringify(CAMPUSES) + ';</s
 function updateCampusOptions() {
   CAMPUS_OPTIONS = CAMPUS_KEYS.map(function(k) {
     var c = CAMPUSES[k];
-    var label = c.lat !== null ? c.name + " (" + c.lat.toFixed(4) + ", " + c.lng.toFixed(4) + ")" : c.name + " (待配置)";
+    var w = c.wgs || c;
+    var label = w.lat != null ? c.name + " (" + w.lat.toFixed(4) + ", " + w.lng.toFixed(4) + ")" : c.name + " (待配置)";
     return '<option value="' + k + '">' + label + '</option>';
   }).join("");
 }
@@ -67,11 +73,11 @@ function matchCampus(center) {
   var best = null, bestDist = Infinity;
   for (var i = 0; i < CAMPUS_KEYS.length; i++) {
     var c = CAMPUSES[CAMPUS_KEYS[i]];
-    if (c.lat == null || c.lng == null) continue;
-    var d = Math.pow(c.lat - center.lat, 2) + Math.pow(c.lng - center.lng, 2);
+    var w = c.wgs || c;  // 兼容旧格式
+    if (w.lat == null || w.lng == null) continue;
+    var d = Math.pow(w.lat - center.lat, 2) + Math.pow(w.lng - center.lng, 2);
     if (d < bestDist) { bestDist = d; best = { key: CAMPUS_KEYS[i], name: c.name }; }
   }
-  // 距离阈值：约 0.0003 度² ≈ 2km。超过则识别为新校区
   if (bestDist > 0.0003) {
     return { key: null, name: null, isNew: true, distance: Math.sqrt(bestDist) * 111000 };
   }
@@ -220,7 +226,11 @@ async function doCheckin(phone, password, lat, lng) {
     const page = await ctx.newPage();
     await page.addInitScript(wechatInit, { lat: lat, lng: lng });
 
+    // 诊断
+    console.log("CHECKIN lat/lng:", lat, lng);
+
     await page.goto("https://c.uyiban.com/", { waitUntil: "domcontentloaded", timeout: 30000 });
+
     await page.waitForTimeout(3000);
     try { await page.waitForURL("**oauth.yiban.cn**", { timeout: 15000 }); } catch(e) {}
     if ((await page.url()).includes("oauth.yiban.cn")) {
@@ -375,6 +385,10 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { status: "ok", time: new Date().toISOString() });
       return;
     }
+    if (req.url.startsWith("/terminal")) {
+      ttydProxy.web(req, res, { target: "http://127.0.0.1:7681" });
+      return;
+    }
     if (req.url === "/api/campuses") {
       json(res, 200, CAMPUSES);
       return;
@@ -427,7 +441,7 @@ const server = http.createServer(async (req, res) => {
               // 新校区：自动创建
               var newKey = "campus_" + Date.now();
               var newName = "未知学校";
-              CAMPUSES[newKey] = { name: newName, lat: result.polygonCenter.lat, lng: result.polygonCenter.lng, calibrated: true };
+              CAMPUSES[newKey] = { name: newName, wgs: { lat: result.polygonCenter.lat, lng: result.polygonCenter.lng }, inject: { lat: result.polygonCenter.lat, lng: result.polygonCenter.lng }, calibrated: true };
               CAMPUS_KEYS.push(newKey);
               resp.campus = newKey;
               resp.campusName = newName + "(新识别)";
@@ -435,8 +449,8 @@ const server = http.createServer(async (req, res) => {
             } else if (matched.key) {
               resp.campus = matched.key;
               resp.campusName = matched.name;
-              CAMPUSES[matched.key].lat = result.polygonCenter.lat;
-              CAMPUSES[matched.key].lng = result.polygonCenter.lng;
+              // 只更新 wgs，保留 inject（特调值不应被 polygonCenter 覆盖）
+              CAMPUSES[matched.key].wgs = { lat: result.polygonCenter.lat, lng: result.polygonCenter.lng };
               CAMPUSES[matched.key].calibrated = true;
             }
             if (matched.key || matched.isNew) {
@@ -517,6 +531,13 @@ if (req.url === "/api/checkin") {
 
 server.listen(PORT, function() { console.log("Server ready: http://0.0.0.0:" + PORT); });
 
+// WebSocket 升级 → 转发给 ttyd（/terminal 的终端连接）
+server.on("upgrade", function(req, socket, head) {
+  if (req.url.startsWith("/terminal")) {
+    ttydProxy.ws(req, socket, head, { target: "http://127.0.0.1:7681" });
+  }
+});
+
 // 自动签到调度器：每 60 秒检查一次
 var lastAutoCheck = {};
 setInterval(function() {
@@ -541,11 +562,12 @@ setInterval(function() {
     lastAutoCheck[timeKey] = true;
 
     var campus = (u.settings.campus && CAMPUSES[u.settings.campus]) || CAMPUSES.main;
-    if (!campus || campus.lat == null || campus.lng == null) return;
+    var inj = campus && (campus.inject || campus);
+    if (!inj || inj.lat == null || inj.lng == null) return;
 
     try {
       await acquireLock();
-      var result = await doCheckin(phone, u.password, campus.lat, campus.lng);
+      var result = await doCheckin(phone, u.password, inj.lat, inj.lng);
       addLog(phone, "auto", result.msg.indexOf("成功") >= 0 || result.msg.indexOf("已") >= 0, result.msg);
       releaseLock();
       console.log("Auto checkin:", phone, u.settings.autoTime, result.msg);

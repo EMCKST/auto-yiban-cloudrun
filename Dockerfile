@@ -9,17 +9,15 @@ RUN npm install
 # Playwright 安装 Chromium + 系统依赖（一步到位）
 RUN npx playwright install --with-deps chromium
 
-# SSH 服务 + 中文字体
+# ttyd（web终端）+ 中文字体
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssh-server \
+    wget \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# 配置 SSH
-RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config && \
-    echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config && \
-    echo 'root:sy20027.1' | chpasswd && \
-    mkdir -p /run/sshd
+# 安装 ttyd（web终端工具）
+RUN wget -q -O /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64 && \
+    chmod +x /usr/local/bin/ttyd
 
 COPY . .
 
